@@ -110,6 +110,27 @@ test('File Tools Test Suite', async (t) => {
     assert.ok(!matchedFiles.some((f) => f.includes('hidden.txt')));
   });
 
+  await t.test('resolveSafePath blocks path traversal outside workspace', () => {
+    assert.throws(
+      () => resolveSafePath(tmpDir, '../../etc/passwd'),
+      /Security Violation/
+    );
+    assert.throws(
+      () => resolveSafePath(tmpDir, path.resolve(os.tmpdir(), 'outside_file.txt')),
+      /Security Violation/
+    );
+    // Relative safe path resolves cleanly
+    const safe = resolveSafePath(tmpDir, 'subdir/file.txt');
+    assert.ok(safe.startsWith(path.resolve(tmpDir)));
+  });
+
+  await t.test('searchFiles throws friendly error on invalid regex', async () => {
+    await assert.rejects(
+      async () => searchFiles(tmpDir, '[unclosed-bracket', true),
+      /Invalid regular expression/
+    );
+  });
+
   // Cleanup
   await fs.rm(tmpDir, { recursive: true, force: true });
 });

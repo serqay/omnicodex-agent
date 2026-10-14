@@ -4,7 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { useTerminalStore } from '../../store/useTerminalStore';
 import { useAppStore } from '../../store/useAppStore';
-import { Terminal as TerminalIcon, Trash2, Play, CornerDownLeft, Copy, Check } from 'lucide-react';
+import { Terminal as TerminalIcon, Trash2, Play, Square, Copy, Check } from 'lucide-react';
 
 export const TerminalView: React.FC = () => {
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -16,7 +16,13 @@ export const TerminalView: React.FC = () => {
   const { workspacePath } = useAppStore();
   const [manualCommand, setManualCommand] = useState('');
   const [isRunningManual, setIsRunningManual] = useState(false);
+  const [runningCmdId, setRunningCmdId] = useState<string | null>(null);
+  const runningCmdIdRef = useRef<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
+
+  useEffect(() => {
+    runningCmdIdRef.current = runningCmdId;
+  }, [runningCmdId]);
 
   useEffect(() => {
     if (!terminalRef.current) return;
@@ -55,6 +61,13 @@ export const TerminalView: React.FC = () => {
 
     term.writeln('\x1b[38;5;244m[OmniCodex Terminal Ready - Workspace Command Runner]\x1b[0m\r\n');
 
+    // Interactive stdin forwarding to active process
+    const dataDisposable = term.onData((data) => {
+      if (runningCmdIdRef.current && window.api) {
+        window.api.terminal.input(runningCmdIdRef.current, data);
+      }
+    });
+
     // If buffer had previous content
     if (outputBuffer) {
       term.write(outputBuffer);
@@ -79,6 +92,7 @@ export const TerminalView: React.FC = () => {
     return () => {
       window.removeEventListener('resize', handleResize);
       observer.disconnect();
+      dataDisposable.dispose();
       term.dispose();
       xtermInstance.current = null;
     };
@@ -107,7 +121,9 @@ export const TerminalView: React.FC = () => {
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(outputBuffer);
+    // Strip ANSI color codes before copying to system clipboard
+    const cleanText = outputBuffer.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+    navigator.clipboard.writeText(cleanText);
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
   };
@@ -118,13 +134,21 @@ export const TerminalView: React.FC = () => {
 
     const cmd = manualCommand.trim();
     setManualCommand('');
+    const cmdId = `manual_${Date.now()}`;
+    setRunningCmdId(cmdId);
     setIsRunningManual(true);
 
-    const cmdId = `manual_${Date.now()}`;
     try {
       await window.api.terminal.execute(cmdId, cmd, workspacePath);
     } finally {
       setIsRunningManual(false);
+      setRunningCmdId(null);
+    }
+  };
+
+  const handleStopManual = () => {
+    if (runningCmdId && window.api) {
+      window.api.terminal.kill(runningCmdId);
     }
   };
 
@@ -144,7 +168,7 @@ export const TerminalView: React.FC = () => {
           <button
             onClick={handleCopy}
             className="h-6 px-2 flex items-center gap-1 rounded-sm bg-muted/60 hover:bg-muted text-xs font-mono text-muted-foreground hover:text-foreground transition-colors"
-            title="Copy terminal buffer"
+            title="Copy clean terminal text"
           >
             {isCopied ? <Check className="w-3.5 h-3.5 text-foreground" /> : <Copy className="w-3.5 h-3.5" />}
             <span>{isCopied ? 'Copied' : 'Copy'}</span>
@@ -174,18 +198,30 @@ export const TerminalView: React.FC = () => {
           type="text"
           value={manualCommand}
           onChange={(e) => setManualCommand(e.target.value)}
-          placeholder="Run shell command in workspace (e.g. npm test, git diff)..."
+          placeholder="Run shell command in workspace (e.g. npm test, git status)..."
           disabled={isRunningManual}
           className="flex-1 bg-transparent border-0 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none"
         />
-        <button
-          type="submit"
-          disabled={!manualCommand.trim() || isRunningManual}
-          className="h-7 px-3 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 rounded-md text-xs font-mono font-medium flex items-center gap-1 transition-opacity"
-        >
-          <Play className="w-3 h-3" />
-          <span>Run</span>
-        </button>
+        {isRunningManual ? (
+          <button
+            type="button"
+            onClick={handleStopManual}
+            className="h-7 px-3 bg-destructive text-destructive-foreground hover:opacity-90 rounded-md text-xs font-mono font-medium flex items-center gap-1 transition-opacity"
+            title="Stop running command"
+          >
+            <Square className="w-3 h-3 fill-current" />
+            <span>Stop</span>
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={!manualCommand.trim()}
+            className="h-7 px-3 bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 rounded-md text-xs font-mono font-medium flex items-center gap-1 transition-opacity"
+          >
+            <Play className="w-3 h-3" />
+            <span>Run</span>
+          </button>
+        )}
       </form>
     </div>
   );

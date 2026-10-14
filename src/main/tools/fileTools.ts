@@ -92,8 +92,9 @@ export function parseGitIgnore(content: string): GitIgnoreRule[] {
     }
 
     try {
+      const regexFlags = process.platform === 'win32' ? 'i' : '';
       rules.push({
-        pattern: new RegExp(regexPattern, 'i'),
+        pattern: new RegExp(regexPattern, regexFlags),
         negate,
         directoryOnly,
       });
@@ -136,12 +137,22 @@ export function isPathIgnored(
   return ignored;
 }
 
+export const MAX_READ_FILE_SIZE = 10 * 1024 * 1024; // 10 MB limit
+export const MAX_SEARCH_FILE_SIZE = 2 * 1024 * 1024; // 2 MB limit for search
+
 export function resolveSafePath(workspacePath: string, targetPath: string): string {
-  if (path.isAbsolute(targetPath)) {
-    // If inside workspace, fine. If outside, also allowed if user specified an absolute path
-    return targetPath;
+  const normalizedWs = path.resolve(workspacePath);
+  const resolved = path.isAbsolute(targetPath)
+    ? path.resolve(targetPath)
+    : path.resolve(normalizedWs, targetPath);
+
+  const rel = path.relative(normalizedWs, resolved);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(
+      `Security Violation: Path '${targetPath}' traverses outside workspace root '${workspacePath}'`
+    );
   }
-  return path.resolve(workspacePath, targetPath);
+  return resolved;
 }
 
 export async function listDirectory(
@@ -191,7 +202,7 @@ export async function listDirectory(
       if (isDirectory && recursive && currentDepth < maxDepth) {
         node.children = await listDirectory(
           workspacePath,
-          fullPath,
+          entryRelPath,
           true,
           maxDepth,
           currentDepth + 1,
@@ -228,6 +239,13 @@ export async function readFile(
   }
 
   try {
+    const stat = await fs.stat(filePath);
+    if (stat.size > MAX_READ_FILE_SIZE) {
+      throw new Error(
+        `File '${relPath}' size (${(stat.size / 1024 / 1024).toFixed(2)} MB) exceeds maximum allowed read limit (10 MB).`
+      );
+    }
+
     const raw = await fs.readFile(filePath, 'utf-8');
     const lines = raw.split(/\r?\n/);
     const totalLines = lines.length;
@@ -290,7 +308,14 @@ export async function searchFiles(
   maxResults = 50
 ): Promise<Array<{ file: string; line: number; match: string }>> {
   const results: Array<{ file: string; line: number; match: string }> = [];
-  const regex = isRegex ? new RegExp(query, 'i') : null;
+  let regex: RegExp | null = null;
+  if (isRegex) {
+    try {
+      regex = new RegExp(query, 'i');
+    } catch (err: any) {
+      throw new Error(`Invalid regular expression '${query}': ${err.message}`);
+    }
+  }
   const lowerQuery = query.toLowerCase();
   const gitRules = await loadGitIgnoreRules(workspacePath);
 
@@ -324,6 +349,9 @@ export async function searchFiles(
         if (BINARY_EXTENSIONS.has(ext)) continue;
 
         try {
+          const stat = await fs.stat(fullPath);
+          if (stat.size > MAX_SEARCH_FILE_SIZE) continue;
+
           const content = await fs.readFile(fullPath, 'utf-8');
           const lines = content.split(/\r?\n/);
 

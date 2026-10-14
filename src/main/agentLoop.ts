@@ -15,12 +15,14 @@ import {
 import { IPC_CHANNELS } from '../shared/ipc';
 
 interface PendingApproval {
+  sessionId: string;
   resolve: (value: { approved: boolean; feedback?: string }) => void;
 }
 
 export class AgentLoopManager {
   private activeControllers = new Map<string, AbortController>();
   private pendingApprovals = new Map<string, PendingApproval>();
+  private sessionCommandIds = new Map<string, Set<string>>();
 
   constructor(private storage: StorageManager) {}
 
@@ -50,12 +52,23 @@ export class AgentLoopManager {
       controller.abort();
       this.activeControllers.delete(sessionId);
     }
-    // Reject any pending tool approvals for this session
+
+    // Reject ONLY pending tool approvals for THIS specific session
     for (const [id, pending] of this.pendingApprovals) {
-      pending.resolve({ approved: false, feedback: 'Operation cancelled by user' });
-      this.pendingApprovals.delete(id);
+      if (pending.sessionId === sessionId) {
+        pending.resolve({ approved: false, feedback: 'Operation cancelled by user' });
+        this.pendingApprovals.delete(id);
+      }
     }
-    processManager.killAll();
+
+    // Terminate ONLY processes spawned by THIS specific session
+    const cmds = this.sessionCommandIds.get(sessionId);
+    if (cmds) {
+      for (const cmdId of cmds) {
+        processManager.kill(cmdId);
+      }
+      this.sessionCommandIds.delete(sessionId);
+    }
   }
 
   async runLoop(
@@ -72,6 +85,12 @@ export class AgentLoopManager {
 
     const abortController = new AbortController();
     this.activeControllers.set(session.id, abortController);
+
+    let sessionCmdSet = this.sessionCommandIds.get(session.id);
+    if (!sessionCmdSet) {
+      sessionCmdSet = new Set();
+      this.sessionCommandIds.set(session.id, sessionCmdSet);
+    }
 
     const workspacePath = session.workspacePath || workspaceManager.getWorkspace();
 
@@ -90,20 +109,23 @@ export class AgentLoopManager {
       fileContextBlock += '=== END ATTACHED FILES ===\n\n';
     }
 
-    // 2. Add user message
+    // 2. Add user message with embedded file context so history is never lost across turns
+    const userContent = fileContextBlock ? `${userPrompt}${fileContextBlock}` : userPrompt;
     const userMessage: ChatMessage = {
       id: `msg_user_${Date.now()}`,
       role: 'user',
-      content: userPrompt,
+      content: userContent,
       attachedFiles,
       timestamp: Date.now(),
     };
     session.messages.push(userMessage);
+    session.updatedAt = Date.now();
     await this.storage.saveSession(session);
 
     const maxIterations = 25;
     let iteration = 0;
     let isLoopCompleted = false;
+    let lastAssistantMsgId: string | null = null;
 
     try {
       while (iteration < maxIterations) {
@@ -123,10 +145,9 @@ export class AgentLoopManager {
 
         for (const msg of session.messages) {
           if (msg.role === 'user') {
-            const extra = (msg.id === userMessage.id && fileContextBlock) ? fileContextBlock : '';
             apiMessages.push({
               role: 'user',
-              content: `${msg.content}${extra}`,
+              content: msg.content,
             });
           } else if (msg.role === 'assistant') {
             const formattedToolCalls = msg.toolCalls?.map((tc) => ({
@@ -154,6 +175,7 @@ export class AgentLoopManager {
         }
 
         const assistantMsgId = `msg_asst_${Date.now()}`;
+        lastAssistantMsgId = assistantMsgId;
         const activeModel = config.customModelId.trim() || config.selectedModel;
 
         let streamResult: any;
@@ -220,6 +242,7 @@ export class AgentLoopManager {
         };
 
         session.messages.push(assistantMessage);
+        session.updatedAt = Date.now();
         await this.storage.saveSession(session);
 
         // If no tools requested, assistant is done!
@@ -255,10 +278,35 @@ export class AgentLoopManager {
           const isMutationTool = ['apply_diff', 'write_file', 'execute_command'].includes(tool.name);
           const needsApproval = config.safeMode && isMutationTool;
 
-          // Generate preview for diff or command
-          const previews = await generateToolPreview(workspacePath, tool.name, tool.arguments);
-          tool.diffPreview = previews.diffPreview;
-          tool.commandPreview = previews.commandPreview;
+          // Generate preview for diff or command safely with try/catch
+          try {
+            const previews = await generateToolPreview(workspacePath, tool.name, tool.arguments);
+            tool.diffPreview = previews.diffPreview;
+            tool.commandPreview = previews.commandPreview;
+          } catch (err: any) {
+            // Do not crash the loop if preview generation fails; report error back to model
+            tool.status = 'error';
+            tool.error = err.message || 'Failed to generate preview for tool';
+            if (!webContents.isDestroyed()) {
+              webContents.send(IPC_CHANNELS.EVENT_TOOL_CALL, {
+                sessionId: session.id,
+                messageId: assistantMsgId,
+                tool,
+              });
+            }
+
+            session.messages.push({
+              id: `msg_tool_${Date.now()}_${tool.id}`,
+              role: 'tool',
+              toolCallId: tool.id,
+              name: tool.name,
+              content: JSON.stringify({ error: tool.error }),
+              timestamp: Date.now(),
+            });
+            session.updatedAt = Date.now();
+            await this.storage.saveSession(session);
+            continue;
+          }
 
           if (needsApproval) {
             tool.status = 'pending_approval';
@@ -272,7 +320,7 @@ export class AgentLoopManager {
 
             // Wait for user approval or rejection
             const approval = await new Promise<{ approved: boolean; feedback?: string }>((resolve) => {
-              this.pendingApprovals.set(tool.id, { resolve });
+              this.pendingApprovals.set(tool.id, { sessionId: session.id, resolve });
             });
 
             if (!approval.approved) {
@@ -295,6 +343,7 @@ export class AgentLoopManager {
                 content: `Action rejected: ${tool.error}`,
                 timestamp: Date.now(),
               });
+              session.updatedAt = Date.now();
               await this.storage.saveSession(session);
               continue;
             }
@@ -309,6 +358,9 @@ export class AgentLoopManager {
               tool,
             });
           }
+
+          // Track active command for session-isolated cancellation
+          sessionCmdSet.add(tool.id);
 
           const toolStart = Date.now();
           let toolResult: any;
@@ -337,6 +389,8 @@ export class AgentLoopManager {
             tool.error = err.message || 'Tool execution failed';
             tool.durationMs = Date.now() - toolStart;
             toolResult = { error: tool.error };
+          } finally {
+            sessionCmdSet.delete(tool.id);
           }
 
           if (!webContents.isDestroyed()) {
@@ -357,15 +411,43 @@ export class AgentLoopManager {
             content: resultStr,
             timestamp: Date.now(),
           });
+          session.updatedAt = Date.now();
           await this.storage.saveSession(session);
+        }
+
+        // Check if loop reached iteration limit
+        if (iteration >= maxIterations && !isLoopCompleted) {
+          const limitNotice = '\n\n[Limit Notice: The agent reached the maximum iteration limit (25 steps) for this task.]';
+          const limitMsgId = `msg_asst_limit_${Date.now()}`;
+          session.messages.push({
+            id: limitMsgId,
+            role: 'assistant',
+            content: limitNotice,
+            timestamp: Date.now(),
+          });
+          session.updatedAt = Date.now();
+          await this.storage.saveSession(session);
+
+          if (!webContents.isDestroyed()) {
+            webContents.send(IPC_CHANNELS.EVENT_STREAM_CHUNK, {
+              sessionId: session.id,
+              messageId: limitMsgId,
+              deltaText: limitNotice,
+              finished: true,
+            } as StreamChunkEvent);
+          }
+          isLoopCompleted = true;
+          break;
         }
       }
     } finally {
       this.activeControllers.delete(session.id);
+      this.sessionCommandIds.delete(session.id);
+
       if (!isLoopCompleted && !webContents.isDestroyed()) {
         webContents.send(IPC_CHANNELS.EVENT_STREAM_CHUNK, {
           sessionId: session.id,
-          messageId: `msg_asst_${Date.now()}`,
+          messageId: lastAssistantMsgId || `msg_asst_${Date.now()}`,
           finished: true,
         } as StreamChunkEvent);
       }

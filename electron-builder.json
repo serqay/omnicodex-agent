@@ -21,6 +21,14 @@
       }
     ]
   },
+  "mac": {
+    "target": ["dmg", "zip"],
+    "category": "public.app-category.developer-tools"
+  },
+  "linux": {
+    "target": ["AppImage", "tar.gz"],
+    "category": "Development"
+  },
   "nsis": {
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,

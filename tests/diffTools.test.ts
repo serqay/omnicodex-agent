@@ -110,6 +110,15 @@ test('Diff Tools Test Suite', async (t) => {
     assert.strictEqual(diskContent, 'const greeting = "world";');
   });
 
+  await t.test('previewDiff rejects empty searchBlock with descriptive error', async () => {
+    await assert.rejects(
+      async () => {
+        await previewDiff(tmpDir, 'apply.ts', '', 'new content');
+      },
+      /Search block cannot be empty/
+    );
+  });
+
   // Cleanup
   await fs.rm(tmpDir, { recursive: true, force: true });
 });

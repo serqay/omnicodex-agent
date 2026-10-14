@@ -8,38 +8,33 @@ export function countLines(text: string): number {
   return text.split(/\r?\n/).length;
 }
 
-export function computeLineChanges(oldText: string, newText: string): { addedLines: number; deletedLines: number } {
-  const oldLines = oldText ? oldText.split(/\r?\n/) : [];
-  const newLines = newText ? newText.split(/\r?\n/) : [];
+export function computeLineChanges(oldBlock: string, newBlock: string): { addedLines: number; deletedLines: number } {
+  const oldLines = oldBlock ? oldBlock.split(/\r?\n/) : [];
+  const newLines = newBlock ? newBlock.split(/\r?\n/) : [];
 
-  const oldCounts = new Map<string, number>();
-  for (const line of oldLines) {
-    oldCounts.set(line, (oldCounts.get(line) || 0) + 1);
-  }
+  const m = oldLines.length;
+  const n = newLines.length;
 
-  const newCounts = new Map<string, number>();
-  for (const line of newLines) {
-    newCounts.set(line, (newCounts.get(line) || 0) + 1);
-  }
+  if (m === 0) return { addedLines: n, deletedLines: 0 };
+  if (n === 0) return { addedLines: 0, deletedLines: m };
 
-  let added = 0;
-  let deleted = 0;
-
-  for (const [line, count] of newCounts) {
-    const oldCount = oldCounts.get(line) || 0;
-    if (count > oldCount) {
-      added += count - oldCount;
+  // Compute Longest Common Subsequence (LCS) table for accurate line deltas
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (oldLines[i - 1] === newLines[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
     }
   }
 
-  for (const [line, count] of oldCounts) {
-    const newCount = newCounts.get(line) || 0;
-    if (count > newCount) {
-      deleted += count - newCount;
-    }
-  }
+  const lcs = dp[m][n];
+  const deletedLines = m - lcs;
+  const addedLines = n - lcs;
 
-  return { addedLines: added, deletedLines: deleted };
+  return { addedLines, deletedLines };
 }
 
 export async function previewDiff(
@@ -48,6 +43,10 @@ export async function previewDiff(
   searchBlock: string,
   replaceBlock: string
 ): Promise<{ preview: DiffPreview; newContent: string }> {
+  if (!searchBlock || searchBlock.length === 0) {
+    throw new Error('Search block cannot be empty. Please specify the exact code block to find and replace.');
+  }
+
   const filePath = resolveSafePath(workspacePath, relPath);
   const original = await fs.readFile(filePath, 'utf-8');
 
@@ -83,7 +82,7 @@ export async function previewDiff(
     for (let i = 0; i <= origLines.length - searchLines.length; i++) {
       let allMatch = true;
       for (let j = 0; j < searchLines.length; j++) {
-        if (origLines[i + j].trimEnd() !== searchLines[j].trimEnd()) {
+        if (origLines[i + j].trim() !== searchLines[j].trim()) {
           allMatch = false;
           break;
         }
@@ -110,7 +109,7 @@ export async function previewDiff(
   }
 
   const finalNewContent = isCrlf ? newNormalized.replace(/\n/g, '\r\n') : newNormalized;
-  const changes = computeLineChanges(original, finalNewContent);
+  const changes = computeLineChanges(searchBlock, replaceBlock);
 
   const preview: DiffPreview = {
     path: filePath,
