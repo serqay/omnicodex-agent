@@ -1,0 +1,73 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production and distribution builds
+dist/
+release/
+build/
+out/
+bin/
+obj/
+*.exe
+*.dll
+*.dylib
+*.so
+*.dmg
+*.deb
+*.appx
+*.msi
+*.blockmap
+
+# Local user data and sessions
+.omnicodex-data/
+*.sqlite
+*.sqlite3
+*.db
+
+# Environment variables, credentials, and API keys
+.env
+.env.*
+*.env
+!.env.example
+*.pem
+*.key
+*.cert
+*.pfx
+*.pkcs12
+secrets.*
+credentials.json
+token.json
+
+# Internal agent and IDE caches
+.agents/
+.gemini/
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+*~
+
+# Logs and debugging
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# OS metadata
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

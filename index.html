@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; connect-src 'self' https: http: ws: wss:;" />
+    <title>OmniCodex Agent</title>
+  </head>
+  <body class="bg-background text-foreground antialiased selection:bg-accent selection:text-accent-foreground overflow-hidden select-none">
+    <div id="root" class="h-screen w-screen flex flex-col overflow-hidden"></div>
+    <script type="module" src="/src/renderer/main.tsx"></script>
+  </body>
+</html>
