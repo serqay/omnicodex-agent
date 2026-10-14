@@ -7,6 +7,7 @@ import { omniRouterClient } from './omnirouter';
 import { processManager } from './tools/commandTools';
 import { readFile, writeFile, searchFiles } from './tools/fileTools';
 import { applyDiff } from './tools/diffTools';
+import { omniRouteServer } from './omnirouteServer';
 import { IPC_CHANNELS } from '../shared/ipc';
 import { OmniRouterConfig, ChatSession } from '../shared/types';
 
@@ -190,6 +191,20 @@ function registerIpcHandlers() {
     return await omniRouterClient.testConnection(baseUrl, apiKey);
   });
 
+  // Local OmniRoute Daemon
+  ipcMain.handle(IPC_CHANNELS.OMNIROUTE_GET_STATUS, async () => {
+    return await omniRouteServer.getStatus();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.OMNIROUTE_START, async () => {
+    return await omniRouteServer.startServer();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.OMNIROUTE_OPEN_DASHBOARD, async () => {
+    await omniRouteServer.openDashboard();
+    return true;
+  });
+
   // Agent Loop
   ipcMain.handle(IPC_CHANNELS.AGENT_SEND_MESSAGE, async (_, { session, prompt, attachedFiles }) => {
     if (!mainWindow) throw new Error('Main window not available');
@@ -216,6 +231,11 @@ function registerIpcHandlers() {
 app.whenReady().then(() => {
   registerIpcHandlers();
   createWindow();
+
+  // Automatically ensure local OmniRoute daemon is running on port 20128
+  omniRouteServer.startServer().catch((err) => {
+    console.warn('Auto-starting local OmniRoute server notice:', err.message);
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

@@ -29,6 +29,9 @@ export const IPC_CHANNELS = {
   // OmniRouter
   OMNIROUTER_FETCH_MODELS: 'omnirouter:fetch-models',
   OMNIROUTER_TEST_CONNECTION: 'omnirouter:test-connection',
+  OMNIROUTE_GET_STATUS: 'omniroute:get-status',
+  OMNIROUTE_START: 'omniroute:start',
+  OMNIROUTE_OPEN_DASHBOARD: 'omniroute:open-dashboard',
 
   // Agent Loop & Controls
   AGENT_SEND_MESSAGE: 'agent:send-message',

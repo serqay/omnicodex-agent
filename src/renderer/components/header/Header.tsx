@@ -19,6 +19,10 @@ export const Header: React.FC = () => {
     config,
     toggleSafeMode,
     setSettingsOpen,
+    omniRouteStatus,
+    isStartingOmniRoute,
+    startOmniRoute,
+    openOmniRouteDashboard,
   } = useAppStore();
 
   const folderName = workspacePath ? workspacePath.split(/[\\/]/).pop() || workspacePath : 'Select Folder';
@@ -65,6 +69,48 @@ export const Header: React.FC = () => {
 
       {/* Right: Controls & Modes */}
       <div className="flex items-center gap-2">
+        {/* OmniRoute Status Badge & Action */}
+        <div
+          className="flex items-center gap-1.5 px-2.5 h-8 rounded-md border border-border text-xs font-mono bg-muted/20"
+          title={
+            omniRouteStatus?.isRunning
+              ? `OmniRoute running on port ${omniRouteStatus.port}. Click Dashboard to manage models and providers.`
+              : isStartingOmniRoute
+              ? 'Starting local OmniRoute daemon...'
+              : 'OmniRoute daemon is offline.'
+          }
+        >
+          <span
+            className={`w-2 h-2 rounded-full shrink-0 ${
+              omniRouteStatus?.isRunning
+                ? 'bg-emerald-500'
+                : isStartingOmniRoute
+                ? 'bg-amber-500 animate-pulse'
+                : 'bg-muted-foreground'
+            }`}
+          />
+          <span className="text-muted-foreground">OmniRoute:</span>
+          <span className="font-semibold text-foreground">
+            {omniRouteStatus?.isRunning ? 'online' : isStartingOmniRoute ? 'booting...' : 'offline'}
+          </span>
+          {omniRouteStatus?.isRunning ? (
+            <button
+              onClick={() => openOmniRouteDashboard()}
+              className="ml-1 text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors cursor-pointer"
+            >
+              Dashboard
+            </button>
+          ) : (
+            <button
+              onClick={() => startOmniRoute()}
+              disabled={isStartingOmniRoute}
+              className="ml-1 text-foreground underline underline-offset-2 hover:opacity-80 transition-opacity cursor-pointer disabled:opacity-50"
+            >
+              Start
+            </button>
+          )}
+        </div>
+
         {/* Model Selector */}
         <ModelSelector />
 

@@ -15,6 +15,8 @@ import {
   EyeOff,
   RefreshCw,
   RotateCcw,
+  ExternalLink,
+  Server,
 } from 'lucide-react';
 
 export const SettingsModal: React.FC = () => {
@@ -26,6 +28,10 @@ export const SettingsModal: React.FC = () => {
     models,
     fetchModels,
     isLoadingModels,
+    omniRouteStatus,
+    isStartingOmniRoute,
+    startOmniRoute,
+    openOmniRouteDashboard,
   } = useAppStore();
 
   const [baseUrl, setBaseUrl] = useState(config.baseUrl);
@@ -112,6 +118,79 @@ export const SettingsModal: React.FC = () => {
 
         {/* Form Body */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5 text-xs">
+          {/* Section: OmniRoute Local Daemon */}
+          <div className="p-3 bg-muted/20 border border-border rounded-md space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    omniRouteStatus?.isRunning
+                      ? 'bg-emerald-500'
+                      : isStartingOmniRoute
+                      ? 'bg-amber-500 animate-pulse'
+                      : 'bg-muted-foreground'
+                  }`}
+                />
+                <div>
+                  <div className="font-medium text-foreground flex items-center gap-1.5">
+                    <span>Local OmniRoute Server</span>
+                    <span className="font-mono text-xs text-muted-foreground">
+                      ({omniRouteStatus?.port ? `port ${omniRouteStatus.port}` : ':20128'})
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    {omniRouteStatus?.isRunning
+                      ? 'Daemon is online. Access local provider dashboard or route requests through localhost.'
+                      : isStartingOmniRoute
+                      ? 'Starting daemon on port 20128...'
+                      : 'Daemon is stopped. Click Start to launch on port 20128.'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => openOmniRouteDashboard()}
+                  className="h-7 px-2.5 bg-muted hover:bg-accent border border-border rounded-md text-xs font-medium text-foreground transition-colors flex items-center gap-1.5"
+                  title="Open http://localhost:20128/dashboard/providers in default browser"
+                >
+                  <ExternalLink className="w-3 h-3 text-muted-foreground" />
+                  <span>Dashboard</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isStartingOmniRoute}
+                  onClick={async () => {
+                    await startOmniRoute();
+                  }}
+                  className="h-7 px-2.5 bg-primary text-primary-foreground hover:opacity-90 rounded-md text-xs font-medium transition-opacity flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isStartingOmniRoute ? 'animate-spin' : ''}`} />
+                  <span>{omniRouteStatus?.isRunning ? 'Restart' : 'Start Server'}</span>
+                </button>
+              </div>
+            </div>
+
+            {baseUrl !== 'http://localhost:20128/v1' && (
+              <div className="pt-2 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
+                <span>Configured for external endpoint.</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBaseUrl('http://localhost:20128/v1');
+                    if (!apiKey) {
+                      setApiKey('sk-328f1757130c8388-b8603c-8f78f948');
+                    }
+                  }}
+                  className="text-foreground font-medium underline underline-offset-2 hover:opacity-80 transition-opacity"
+                >
+                  Switch Base URL to localhost:20128/v1
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Section: OmniRouter Connection */}
           <div className="space-y-3">
             <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground font-mono">

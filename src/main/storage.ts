@@ -5,9 +5,9 @@ import { OmniRouterConfig, ChatSession } from '../shared/types';
 import { DEFAULT_SYSTEM_PROMPT } from '../shared/defaultPrompt';
 
 const DEFAULT_CONFIG: OmniRouterConfig = {
-  baseUrl: 'https://api.omnirouter.ai/v1',
-  apiKey: '',
-  selectedModel: 'anthropic/claude-3.7-sonnet',
+  baseUrl: 'http://localhost:20128/v1',
+  apiKey: 'sk-328f1757130c8388-b8603c-8f78f948',
+  selectedModel: 'gweb/gemini-3.7-flash',
   customModelId: '',
   temperature: 0.2,
   maxTokens: 4096,

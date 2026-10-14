@@ -54,6 +54,11 @@ export interface ElectronAPI {
     fetchModels: (baseUrl: string, apiKey: string) => Promise<OmniModel[]>;
     testConnection: (baseUrl: string, apiKey: string) => Promise<{ success: boolean; message: string; modelCount?: number }>;
   };
+  omniroute: {
+    getStatus: () => Promise<{ isRunning: boolean; port: number; dashboardUrl: string; apiUrl: string }>;
+    start: () => Promise<{ success: boolean; message: string }>;
+    openDashboard: () => Promise<boolean>;
+  };
   agent: {
     sendMessage: (session: ChatSession, prompt: string, attachedFiles?: string[]) => Promise<ChatSession>;
     approveTool: (toolId: string) => Promise<boolean>;
@@ -125,6 +130,11 @@ const api: ElectronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.OMNIROUTER_FETCH_MODELS, { baseUrl, apiKey }),
     testConnection: (baseUrl: string, apiKey: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.OMNIROUTER_TEST_CONNECTION, { baseUrl, apiKey }),
+  },
+  omniroute: {
+    getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.OMNIROUTE_GET_STATUS),
+    start: () => ipcRenderer.invoke(IPC_CHANNELS.OMNIROUTE_START),
+    openDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.OMNIROUTE_OPEN_DASHBOARD),
   },
   agent: {
     sendMessage: (session: ChatSession, prompt: string, attachedFiles?: string[]) =>

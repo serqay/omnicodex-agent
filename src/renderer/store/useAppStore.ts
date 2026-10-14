@@ -39,6 +39,13 @@ interface AppState {
   streamingReasoning: string;
   activeTools: Map<string, ToolCall>;
   isSettingsOpen: boolean;
+  omniRouteStatus: {
+    isRunning: boolean;
+    port: number;
+    dashboardUrl: string;
+    apiUrl: string;
+  } | null;
+  isStartingOmniRoute: boolean;
 
   // Actions
   initialize: () => Promise<void>;
@@ -46,6 +53,9 @@ interface AppState {
   setWorkspace: (path: string) => Promise<void>;
   refreshFileTree: () => Promise<void>;
   refreshGitStatus: () => Promise<void>;
+  checkOmniRouteStatus: () => Promise<any>;
+  startOmniRoute: () => Promise<{ success: boolean; message: string }>;
+  openOmniRouteDashboard: () => Promise<boolean>;
   fetchModels: () => Promise<void>;
   createSession: () => Promise<string>;
   switchSession: (id: string) => void;
@@ -75,6 +85,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   streamingReasoning: '',
   activeTools: new Map(),
   isSettingsOpen: false,
+  omniRouteStatus: null,
+  isStartingOmniRoute: false,
 
   initialize: async () => {
     if (typeof window === 'undefined' || !window.api) return;
@@ -100,6 +112,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (config.apiKey) {
       get().fetchModels().catch(() => {});
     }
+
+    // Check OmniRoute server status
+    get().checkOmniRouteStatus();
+    setInterval(() => {
+      get().checkOmniRouteStatus();
+    }, 10000);
 
     // Register event listeners
     window.api.workspace.onChanged(() => {
@@ -209,6 +227,38 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!window.api) return;
     const git = await window.api.workspace.getGitStatus();
     set({ gitStatus: git });
+  },
+
+  checkOmniRouteStatus: async () => {
+    if (!window.api?.omniroute) return null;
+    try {
+      const status = await window.api.omniroute.getStatus();
+      set({ omniRouteStatus: status });
+      return status;
+    } catch {
+      set({ omniRouteStatus: null });
+      return null;
+    }
+  },
+
+  startOmniRoute: async () => {
+    if (!window.api?.omniroute) return { success: false, message: 'API not available' };
+    set({ isStartingOmniRoute: true });
+    try {
+      const res = await window.api.omniroute.start();
+      await get().checkOmniRouteStatus();
+      if (res.success) {
+        get().fetchModels().catch(() => {});
+      }
+      return res;
+    } finally {
+      set({ isStartingOmniRoute: false });
+    }
+  },
+
+  openOmniRouteDashboard: async () => {
+    if (!window.api?.omniroute) return false;
+    return await window.api.omniroute.openDashboard();
   },
 
   fetchModels: async () => {
